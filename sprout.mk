@@ -117,6 +117,10 @@ PRODUCT_PACKAGES += \
 PRODUCT_DEFAULT_PROPERTY_OVERRIDES += \
     camera.disable_zsl_mode=1
 	
+# Enable MultiWindow
+PRODUCT_DEFAULT_PROPERTY_OVERRIDES += \
+    persist.sys.debug.multi_window=true
+	
 PRODUCT_PACKAGES += \
     librs_jni \
     com.android.future.usb.accessory
