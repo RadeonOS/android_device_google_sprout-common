@@ -17,7 +17,11 @@
 package com.android.internal.telephony;
 
 import static com.android.internal.telephony.RILConstants.*;
+import static com.android.internal.telephony.TelephonyIntents.*;
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.net.LocalSocket;
 import android.net.LocalSocketAddress;
 import android.os.AsyncResult;
@@ -27,6 +31,8 @@ import android.os.Parcel;
 import android.os.SystemProperties;
 import android.telephony.Rlog;
 import android.telephony.SignalStrength;
+import android.util.Log;
+import android.widget.Toast;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -37,6 +43,8 @@ import com.android.internal.telephony.uicc.IccIoResult;
 public class SproutRIL extends RIL implements CommandsInterface {
 
 static final int RIL_REQUEST_SET_3G_CAPABILITY = 128;
+static final int RIL_REQUEST_ALLOW_DATA = 125;
+static int registered = 0;
 
     public SproutRIL(Context context, int networkMode, int cdmaSubscription) {
         super(context, networkMode, cdmaSubscription, null);
@@ -259,7 +267,7 @@ static final int RIL_REQUEST_SET_3G_CAPABILITY = 128;
 
 
 
-    protected RILRequest
+   protected RILRequest
     processSolicited (Parcel p) {
         int serial, error;
         boolean found = false;
@@ -294,7 +302,7 @@ static final int RIL_REQUEST_SET_3G_CAPABILITY = 128;
             case RIL_REQUEST_ENTER_SIM_PUK2: ret =  responseInts(p); break;
             case RIL_REQUEST_CHANGE_SIM_PIN: ret =  responseInts(p); break;
             case RIL_REQUEST_CHANGE_SIM_PIN2: ret =  responseInts(p); break;
-            case RIL_REQUEST_ENTER_DEPERSONALIZATION_CODE: ret =  responseInts(p); break;
+            case RIL_REQUEST_ENTER_NETWORK_DEPERSONALIZATION: ret =  responseInts(p); break;
             case RIL_REQUEST_GET_CURRENT_CALLS: ret =  responseCallList(p); break;
             case RIL_REQUEST_DIAL: ret =  responseVoid(p); break;
             case RIL_REQUEST_GET_IMSI: ret =  responseString(p); break;
@@ -313,7 +321,7 @@ static final int RIL_REQUEST_SET_3G_CAPABILITY = 128;
             case RIL_REQUEST_SWITCH_WAITING_OR_HOLDING_AND_ACTIVE: ret =  responseVoid(p); break;
             case RIL_REQUEST_CONFERENCE: ret =  responseVoid(p); break;
             case RIL_REQUEST_UDUB: ret =  responseVoid(p); break;
-            case RIL_REQUEST_LAST_CALL_FAIL_CAUSE: ret =  responseInts(p); break;
+            case RIL_REQUEST_LAST_CALL_FAIL_CAUSE: ret =  responseFailCause(p); break;
             case RIL_REQUEST_SIGNAL_STRENGTH: ret =  responseSignalStrength(p); break;
             case RIL_REQUEST_VOICE_REGISTRATION_STATE: ret =  responseStrings(p); break;
             case RIL_REQUEST_DATA_REGISTRATION_STATE: ret =  responseStrings(p); break;
@@ -400,7 +408,6 @@ static final int RIL_REQUEST_SET_3G_CAPABILITY = 128;
             case RIL_REQUEST_REPORT_SMS_MEMORY_STATUS: ret = responseVoid(p); break;
             case RIL_REQUEST_REPORT_STK_SERVICE_IS_RUNNING: ret = responseVoid(p); break;
             case RIL_REQUEST_CDMA_GET_SUBSCRIPTION_SOURCE: ret =  responseInts(p); break;
-            case RIL_REQUEST_GET_DATA_CALL_PROFILE: ret =  responseGetDataCallProfile(p); break;
             case RIL_REQUEST_ISIM_AUTHENTICATION: ret =  responseString(p); break;
             case RIL_REQUEST_ACKNOWLEDGE_INCOMING_GSM_SMS_WITH_PDU: ret = responseVoid(p); break;
             case RIL_REQUEST_STK_SEND_ENVELOPE_WITH_STATUS: ret = responseICC_IO(p); break;
@@ -423,8 +430,13 @@ static final int RIL_REQUEST_SET_3G_CAPABILITY = 128;
             case RIL_REQUEST_SET_UICC_SUBSCRIPTION: ret = responseVoid(p); break;
             case RIL_REQUEST_ALLOW_DATA: ret = responseVoid(p); break;
             case RIL_REQUEST_GET_HARDWARE_CONFIG: ret = responseHardwareConfig(p); break;
-            case RIL_REQUEST_SIM_AUTHENTICATION: ret =  responseICC_IOBase64(p); break;
             case RIL_REQUEST_SHUTDOWN: ret = responseVoid(p); break;
+            case RIL_REQUEST_GET_RADIO_CAPABILITY: ret =  responseRadioCapability(p); break;
+            case RIL_REQUEST_SET_RADIO_CAPABILITY: ret =  responseRadioCapability(p); break;
+            case RIL_REQUEST_START_LCE: ret = responseLceStatus(p); break;
+            case RIL_REQUEST_STOP_LCE: ret = responseLceStatus(p); break;
+            case RIL_REQUEST_PULL_LCEDATA: ret = responseLceData(p); break;
+            case RIL_REQUEST_GET_ACTIVITY_INFO: ret = responseActivityData(p); break;
             default:
                 throw new RuntimeException("Unrecognized solicited response: " + rr.mRequest);
             //break;
@@ -482,10 +494,24 @@ static final int RIL_REQUEST_SET_3G_CAPABILITY = 128;
                         mIccStatusChangedRegistrants.notifyRegistrants();
                     }
                     break;
+                case RIL_REQUEST_GET_RADIO_CAPABILITY: {
+                    // Ideally RIL's would support this or at least give NOT_SUPPORTED
+                    // but the hammerhead RIL reports GENERIC :(
+                    // TODO - remove GENERIC_FAILURE catching: b/21079604
+                    if (REQUEST_NOT_SUPPORTED == error ||
+                            GENERIC_FAILURE == error) {
+                        // we should construct the RAF bitmask the radio
+                        // supports based on preferred network bitmasks
+                        ret = makeStaticRadioCapability();
+                        error = 0;
+                    }
+                    break;
+                }
             }
 
-            rr.onError(error, ret);
-        } else {
+            if (error != 0) rr.onError(error, ret);
+        }
+        if (error == 0) {
 
             if (RILJ_LOGD) riljLog(rr.serialString() + "< " + requestToString(rr.mRequest)
                     + " " + retToString(rr.mRequest, ret));
@@ -513,7 +539,7 @@ static final int RIL_REQUEST_SET_3G_CAPABILITY = 128;
             case RIL_REQUEST_ENTER_SIM_PUK2: return "ENTER_SIM_PUK2";
             case RIL_REQUEST_CHANGE_SIM_PIN: return "CHANGE_SIM_PIN";
             case RIL_REQUEST_CHANGE_SIM_PIN2: return "CHANGE_SIM_PIN2";
-            case RIL_REQUEST_ENTER_DEPERSONALIZATION_CODE: return "ENTER_DEPERSONALIZATION_CODE";
+            case RIL_REQUEST_ENTER_NETWORK_DEPERSONALIZATION: return "ENTER_NETWORK_DEPERSONALIZATION";
             case RIL_REQUEST_GET_CURRENT_CALLS: return "GET_CURRENT_CALLS";
             case RIL_REQUEST_DIAL: return "DIAL";
             case RIL_REQUEST_GET_IMSI: return "GET_IMSI";
@@ -610,7 +636,6 @@ static final int RIL_REQUEST_SET_3G_CAPABILITY = 128;
             case RIL_REQUEST_REPORT_SMS_MEMORY_STATUS: return "RIL_REQUEST_REPORT_SMS_MEMORY_STATUS";
             case RIL_REQUEST_REPORT_STK_SERVICE_IS_RUNNING: return "RIL_REQUEST_REPORT_STK_SERVICE_IS_RUNNING";
             case RIL_REQUEST_CDMA_GET_SUBSCRIPTION_SOURCE: return "RIL_REQUEST_CDMA_GET_SUBSCRIPTION_SOURCE";
-            case RIL_REQUEST_GET_DATA_CALL_PROFILE: return "RIL_REQUEST_GET_DATA_CALL_PROFILE";
             case RIL_REQUEST_ISIM_AUTHENTICATION: return "RIL_REQUEST_ISIM_AUTHENTICATION";
             case RIL_REQUEST_ACKNOWLEDGE_INCOMING_GSM_SMS_WITH_PDU: return "RIL_REQUEST_ACKNOWLEDGE_INCOMING_GSM_SMS_WITH_PDU";
             case RIL_REQUEST_STK_SEND_ENVELOPE_WITH_STATUS: return "RIL_REQUEST_STK_SEND_ENVELOPE_WITH_STATUS";
@@ -631,76 +656,35 @@ static final int RIL_REQUEST_SET_3G_CAPABILITY = 128;
             case RIL_REQUEST_SET_UICC_SUBSCRIPTION: return "RIL_REQUEST_SET_UICC_SUBSCRIPTION";
             case RIL_REQUEST_ALLOW_DATA: return "RIL_REQUEST_ALLOW_DATA";
             case RIL_REQUEST_GET_HARDWARE_CONFIG: return "GET_HARDWARE_CONFIG";
-            case RIL_REQUEST_SET_3G_CAPABILITY: return "RIL_REQUEST_SET_3G_CAPABILITY";
-            case RIL_REQUEST_SIM_AUTHENTICATION: return "RIL_REQUEST_SIM_AUTHENTICATION";
             case RIL_REQUEST_SHUTDOWN: return "RIL_REQUEST_SHUTDOWN";
+            case RIL_REQUEST_SET_RADIO_CAPABILITY:
+                    return "RIL_REQUEST_SET_RADIO_CAPABILITY";
+            case RIL_REQUEST_GET_RADIO_CAPABILITY:
+                    return "RIL_REQUEST_GET_RADIO_CAPABILITY";
+			case RIL_REQUEST_SET_3G_CAPABILITY: return "RIL_REQUEST_SET_3G_CAPABILITY";
+            case RIL_REQUEST_START_LCE: return "RIL_REQUEST_START_LCE";
+            case RIL_REQUEST_STOP_LCE: return "RIL_REQUEST_STOP_LCE";
+            case RIL_REQUEST_PULL_LCEDATA: return "RIL_REQUEST_PULL_LCEDATA";
+            case RIL_REQUEST_GET_ACTIVITY_INFO: return "RIL_REQUEST_GET_ACTIVITY_INFO";
             default: return "<unknown request>";
         }
     }
 
-    private byte[] stringToBcd(String input) {
-    int len = input.length();
-    byte[] result = new byte[(len + 1) / 2];
-    int pos = 0;
-    for (int i = 0; i < len; i++) {
-        int value = ((int) input.charAt(i)) - '0';
-        if ((i & 1) != 0) {
-            int temp = (result[pos] & 0xf) | ((value & 0xf) << 4);
-            result[pos] = (byte)temp;
-            pos++;
-        } else {
-            int temp = (0xf0 | (value & 0xf));
-            result[pos] = (byte)temp;
-        }
-    }
-    return result;
-}
-
-    @Override
-    public void
-    iccIOForApp (int command, int fileid, String path, int p1, int p2, int p3,
-            String data, String pin2, String aid, Message result) {
-        if (fileid == IccConstants.EF_ICCID) {
-            String iccId = SystemProperties.get("ril.iccid.sim" + (mInstanceId + 1));
-            byte lenLow = (byte) (iccId.length() >> 8);
-            byte lenHigh = (byte) (iccId.length() & 0xff);
-            byte[] payload = {0, 0, lenHigh, lenLow, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0};
-                if(p3==0)
-                    AsyncResult.forMessage(result, new IccIoResult(0x90, 0, payload), null);
-                else
-                    AsyncResult.forMessage(result, new IccIoResult(0x90, 0, stringToBcd(iccId)), null);
-            result.sendToTarget();
-            return;
-        }
-        //Note: This RIL request has not been renamed to ICC,
-        //       but this request is also valid for SIM and RUIM
-        RILRequest rr
-                = RILRequest.obtain(RIL_REQUEST_SIM_IO, result);
-
-        rr.mParcel.writeInt(command);
-        rr.mParcel.writeInt(fileid);
-        rr.mParcel.writeString(path);
-        rr.mParcel.writeInt(p1);
-        rr.mParcel.writeInt(p2);
-        rr.mParcel.writeInt(p3);
-        rr.mParcel.writeString(data);
-        rr.mParcel.writeString(pin2);
-        rr.mParcel.writeString(aid);
-
-        if (RILJ_LOGD) riljLog(rr.serialString() + "> iccIO: "
-                + requestToString(rr.mRequest)
-                + " 0x" + Integer.toHexString(command)
-                + " 0x" + Integer.toHexString(fileid) + " "
-                + " path: " + path + ","
-                + p1 + "," + p2 + "," + p3
-                + " aid: " + aid);
-
-        send(rr);
-    }
-
     public void setDataAllowed(boolean allowed, Message result) {
-        handle3GSwitch();
-        RILRequest rr = RILRequest.obtain(125, result);
+        int currentSimId = mInstanceId == null ? 0 : mInstanceId;
+        int m3gSimId = get3gSimId();
+        if((m3gSimId-1) != currentSimId) {
+            RILRequest rr = RILRequest.obtain(RIL_REQUEST_SET_3G_CAPABILITY, null);
+            rr.mParcel.writeInt(1);
+            rr.mParcel.writeInt(currentSimId+1);
+            send(rr);
+            resetRadio(null);
+        }
+        else {
+            Rlog.i(RILJ_LOG_TAG, "Not setting data subscription on same SIM, requested="
+			       +(currentSimId+1)+" current="+m3gSimId);
+        }
+        RILRequest rr = RILRequest.obtain(RIL_REQUEST_ALLOW_DATA, result);
         if (RILJ_LOGD) riljLog(rr.serialString() + "> " + requestToString(rr.mRequest)
                 + " " + allowed);
         rr.mParcel.writeInt(1);
@@ -708,33 +692,7 @@ static final int RIL_REQUEST_SET_3G_CAPABILITY = 128;
         send(rr);
     }
 
-    public void handle3GSwitch() {
-        int simId = mInstanceId == null ? 0 : mInstanceId;
-        int newsim = SystemProperties.getInt("gsm.3gswitch", 0);
-        newsim = newsim-1;
-        if(!(simId==newsim))
-        {
-        int prop = SystemProperties.getInt("gsm.3gswitch", 0);
-        if (RILJ_LOGD) riljLog("Setting data subscription on SIM"+(simId+1)+" mInstanceid="+mInstanceId+" gsm.3gswitch="+prop);
-        RILRequest rr = RILRequest.obtain(RIL_REQUEST_SET_3G_CAPABILITY, null);
-        rr.mParcel.writeInt(1);
-        int realsim = simId + 1;
-        rr.mParcel.writeInt(realsim);
-        if (RILJ_LOGD) riljLog(rr.serialString() + "> " + requestToString(rr.mRequest));
-        send(rr);
-        try {
-             Thread.sleep(1000);
-            } catch (InterruptedException er) {
-            }
-        resetRadio(null);
-        try {
-             Thread.sleep(4*1000);
-            } catch (InterruptedException er) {
-            }
-        }
-        else
-        {
-        if (RILJ_LOGD) riljLog("Not setting data subscription on same SIM");
-        }
-    }
+	public int get3gSimId() {
+	   return SystemProperties.getInt("gsm.3gswitch", 0);
+	}
 }
