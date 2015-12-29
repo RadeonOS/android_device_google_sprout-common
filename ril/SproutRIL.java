@@ -44,6 +44,8 @@ public class SproutRIL extends RIL implements CommandsInterface {
 
 static final int RIL_REQUEST_SET_3G_CAPABILITY = 128;
 static final int RIL_REQUEST_ALLOW_DATA = 125;
+static final int RIL_REQUEST_GET_HARDWARE_CONFIG = 122;
+static final int RIL_REQUEST_SET_UICC_SUBSCRIPTION = 124;
 static int registered = 0;
 
     public SproutRIL(Context context, int networkMode, int cdmaSubscription) {
@@ -668,6 +670,34 @@ static int registered = 0;
             case RIL_REQUEST_GET_ACTIVITY_INFO: return "RIL_REQUEST_GET_ACTIVITY_INFO";
             default: return "<unknown request>";
         }
+    }
+
+    @Override
+    public void
+    getHardwareConfig (Message result) {
+        RILRequest rr = RILRequest.obtain(RIL_REQUEST_GET_HARDWARE_CONFIG, result);
+
+        if (RILJ_LOGD) riljLog(rr.serialString() + "> " + requestToString(rr.mRequest));
+
+        send(rr);
+    }
+
+    protected Object
+    responseFailCause(Parcel p) {
+        int numInts;
+        int response[];
+
+        numInts = p.readInt();
+        response = new int[numInts];
+        for (int i = 0 ; i < numInts ; i++) {
+            response[i] = p.readInt();
+        }
+        LastCallFailCause failCause = new LastCallFailCause();
+        failCause.causeCode = response[0];
+        if (p.dataAvail() > 0) {
+          failCause.vendorCause = p.readString();
+        }
+        return failCause;
     }
 
     public void setDataAllowed(boolean allowed, Message result) {
