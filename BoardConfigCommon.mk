@@ -25,7 +25,7 @@ BOARD_FLASH_BLOCK_SIZE := 131072
 # kernel stuff
 TARGET_KERNEL_SOURCE := kernel/mediatek/sprout
 TARGET_KERNEL_CONFIG := cyanogenmod_sprout_defconfig
-BOARD_KERNEL_CMDLINE :=
+BOARD_KERNEL_CMDLINE := 
 BOARD_MKBOOTIMG_ARGS := --kernel_offset 0x00008000 --ramdisk_offset 0x04000000 --tags_offset 0x00000100
 BOARD_KERNEL_BASE := 0x80000000
 BOARD_KERNEL_PAGESIZE := 2048
@@ -67,7 +67,7 @@ WIFI_DRIVER_FW_PATH_STA:=P2P
 # Enable Minikin text layout engine (will be the default soon)
 USE_MINIKIN := true
 
-MALLOC_IMPL := dlmalloc
+# MALLOC_IMPL := dlmalloc
 DEVICE_RESOLUTION := 480x854
 
 
@@ -84,5 +84,5 @@ TARGET_USERIMAGES_USE_EXT4:=true
 USE_CAMERA_STUB := true
 
 # SELinux
-BOARD_SEPOLICY_DIRS += \
-    device/google/sprout-common/sepolicy
+#BOARD_SEPOLICY_DIRS += \
+#    device/google/sprout-common/sepolicy
