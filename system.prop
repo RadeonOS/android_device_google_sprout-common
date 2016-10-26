@@ -4,7 +4,6 @@
 rild.libpath=/system/lib/mtk-ril.so
 rild.libargs=-d /dev/ttyC0
 
-
 # MTK, Infinity, 20090720 {
 wifi.interface=wlan0
 ro.hardware=sprout
@@ -49,6 +48,10 @@ ro.sys.usb.bicr=yes
 # audio
 ro.camera.sound.forced=0
 ro.audio.silent=0
+
+# media
+media.stagefright.legacyencoder=true
+media.stagefright.less-secure=true
 
 ro.zygote.preload.enable=0
 
