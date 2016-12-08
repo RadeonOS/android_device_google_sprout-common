@@ -6,12 +6,11 @@ import /init.modem.rc
 on early-init
     mount debugfs /sys/kernel/debug /sys/kernel/debug
     setprop ro.mtk.hardware mt6582
-    export LD_SHIM_LIBS /system/lib/librilmtk.so|libsprout.so:/system/lib/libmtkjpeg.so|libsprout.so:/system/bin/wpa_supplicant|libsprout.so
+    export LD_SHIM_LIBS /system/lib/librilmtk.so|libsprout.so|libshim_mtkril.so:/system/lib/libmtkjpeg.so|libsprout.so:/system/bin/wpa_supplicant|libsprout.so
 
 on init
     mkdir /protect_f 0771 system system
-    mkdir /protect_s 0771 system system
-
+    mkdir /protect_s 0771 system systemS
 
     # Change ION driver permission
     chmod 0666 /dev/ion
@@ -884,4 +883,3 @@ service conn_launcher /system/bin/6620_launcher -p /system/etc/firmware/
 #
 # Connectivity related services (End)
 #
-
