@@ -114,10 +114,6 @@ PRODUCT_PACKAGES += \
 PRODUCT_PACKAGES += \
     libsprout
 
-# Compatibility
-PRODUCT_PACKAGES += \
-		libshim_mtkril
-
 PRODUCT_DEFAULT_PROPERTY_OVERRIDES += \
     camera.disable_zsl_mode=1
 
